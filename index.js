@@ -14,6 +14,9 @@ const prettyError = require('./lib/errors.js');
 const chunkSorter = require('./lib/chunksorter.js');
 const getHtmlWebpackPluginHooks = require('./lib/hooks.js').getHtmlWebpackPluginHooks;
 
+/** @type {Record<string, string[]>} */
+const sitemaps = {};
+
 /** @typedef {import("./typings").HtmlTagObject} HtmlTagObject */
 /** @typedef {import("./typings").Options} HtmlWebpackOptions */
 /** @typedef {import("./typings").ProcessedOptions} ProcessedHtmlWebpackOptions */
@@ -28,7 +31,7 @@ class HtmlWebpackPlugin {
   /**
    * @param {HtmlWebpackOptions} [options]
    */
-  constructor (options) {
+  constructor(options) {
     /** @type {HtmlWebpackOptions} */
     // TODO remove me in the next major release
     this.userOptions = options || {};
@@ -68,7 +71,7 @@ class HtmlWebpackPlugin {
    * @param {Compiler} compiler
    * @returns {void}
    */
-  apply (compiler) {
+  apply(compiler) {
     this.logger = compiler.getInfrastructureLogger('HtmlWebpackPlugin');
 
     // Wait for configuration preset plugions to apply all configure webpack defaults
@@ -109,6 +112,30 @@ class HtmlWebpackPlugin {
           },
           this.userOptions.meta
         );
+      }
+
+      // push sitemap
+      const outDir = compiler.options.output.path || path.join(process.cwd(), 'dist')
+      if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true })
+      // create key when not exist
+      if (!sitemaps[outDir]) sitemaps[outDir] = []
+
+      const basePath = this.userOptions.publicPath || ''; // useful for webpack deployment for subfolder
+      const baseUrl = this.userOptions.baseUrl || 'http://example.com'; // create new option baseUrl
+      const filename = this.userOptions.filename || this.options.filename; // the file name
+      let resultUrl; // http://example.com/basepath/filename.html
+      if (basePath.trim().length > 0) {
+        resultUrl = `${baseUrl}/${basePath}/${filename}`
+      } else {
+        resultUrl = `${baseUrl}/${filename}`
+      }
+      resultUrl = resultUrl.replace(/([^:]\/)\/+/g, "$1"); // remove double slashes from url pathname
+      sitemaps[outDir].push(resultUrl);
+
+      // save sitemaps by output dir group
+      for (const key in sitemaps) {
+        const sitemap = sitemaps[key];
+        fs.writeFileSync(path.join(key, 'sitemap.txt'), sitemap.join('\n'))
       }
 
       // entryName to fileName conversion function
@@ -160,10 +187,10 @@ class HtmlWebpackPlugin {
               {
                 name: 'HtmlWebpackPlugin',
                 stage:
-                /**
-                 * Generate the html after minification and dev tooling is done
-                 */
-                compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_INLINE
+                  /**
+                   * Generate the html after minification and dev tooling is done
+                   */
+                  compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_INLINE
               },
               /**
                * Hook into the process assets hook
@@ -185,7 +212,7 @@ class HtmlWebpackPlugin {
    * @param {string} template The path to the template e.g. './index.html'
    * @param {string} context The webpack base resolution path for relative paths e.g. process.cwd()
    */
-  getTemplatePath (template, context) {
+  getTemplatePath(template, context) {
     if (template === 'auto') {
       template = path.resolve(context, 'src/index.ejs');
       if (!fs.existsSync(template)) {
@@ -212,7 +239,7 @@ class HtmlWebpackPlugin {
    * @param {string[]|'all'} includedChunks
    * @param {string[]} excludedChunks
    */
-  filterEntryChunks (chunks, includedChunks, excludedChunks) {
+  filterEntryChunks(chunks, includedChunks, excludedChunks) {
     return chunks.filter(chunkName => {
       // Skip if the chunks should be filtered and the given chunk was not added explicity
       if (Array.isArray(includedChunks) && includedChunks.indexOf(chunkName) === -1) {
@@ -237,7 +264,7 @@ class HtmlWebpackPlugin {
    * @param {string|((entryNameA: string, entryNameB: string) => number)} sortMode
    * @param {Compilation} compilation
    */
-  sortEntryChunks (entryNames, sortMode, compilation) {
+  sortEntryChunks(entryNames, sortMode, compilation) {
     // Custom function
     if (typeof sortMode === 'function') {
       return entryNames.sort(sortMode);
@@ -271,7 +298,7 @@ class HtmlWebpackPlugin {
    * @private
    * @param {string} filePath
    */
-  urlencodePath (filePath) {
+  urlencodePath(filePath) {
     // People use the filepath in quite unexpected ways.
     // Try to extract the first querystring of the url:
     //
@@ -293,7 +320,7 @@ class HtmlWebpackPlugin {
    * @param {string} url
    * @param {string} hash
    */
-  appendHash (url, hash) {
+  appendHash(url, hash) {
     if (!url) {
       return url;
     }
@@ -310,7 +337,7 @@ class HtmlWebpackPlugin {
    * @param {string | 'auto'} customPublicPath
    * @returns {string}
    */
-  getPublicPath (compilation, filename, customPublicPath) {
+  getPublicPath(compilation, filename, customPublicPath) {
     /**
      * @type {string} the configured public path to the asset root
      * if a path publicPath is set in the current webpack config use it otherwise
@@ -348,7 +375,7 @@ class HtmlWebpackPlugin {
    * @param {string[]} entryNames
    * @returns {AssetsInformationByGroups}
    */
-  getAssetsInformationByGroups (compilation, outputName, entryNames) {
+  getAssetsInformationByGroups(compilation, outputName, entryNames) {
     /** The public path used inside the html file */
     const publicPath = this.getPublicPath(compilation, outputName, this.options.publicPath);
     /**
@@ -369,7 +396,7 @@ class HtmlWebpackPlugin {
 
     // Append a hash for cache busting
     if (this.options.hash && assets.manifest) {
-      assets.manifest = this.appendHash(assets.manifest, /** @type {string} */ (compilation.hash));
+      assets.manifest = this.appendHash(assets.manifest, /** @type {string} */(compilation.hash));
     }
 
     // Extract paths to .js, .mjs and .css files from the current compilation
@@ -441,7 +468,7 @@ class HtmlWebpackPlugin {
    * @param {string} templateFilename
    * @returns {Promise<string | (() => string | Promise<string>)>}
    */
-  evaluateCompilationResult (source, publicPath, templateFilename) {
+  evaluateCompilationResult(source, publicPath, templateFilename) {
     if (!source) {
       return Promise.reject(new Error('The child compilation didn\'t provide a result'));
     }
@@ -537,7 +564,7 @@ class HtmlWebpackPlugin {
    * @param {Array<HtmlTagObject>} assetTagGroup
    * @returns {Array<HtmlTagObject>}
    */
-  prepareAssetTagGroupForRendering (assetTagGroup) {
+  prepareAssetTagGroupForRendering(assetTagGroup) {
     const xhtml = this.options.xhtml;
     return HtmlTagArray.from(assetTagGroup.map((assetTag) => {
       const copiedAssetTag = Object.assign({}, assetTag);
@@ -560,7 +587,7 @@ class HtmlWebpackPlugin {
      }} assetTags
    * @returns {Promise<{[key: any]: any}>}
    */
-  getTemplateParameters (compilation, assetsInformationByGroups, assetTags) {
+  getTemplateParameters(compilation, assetsInformationByGroups, assetTags) {
     const templateParameters = this.options.templateParameters;
 
     if (templateParameters === false) {
@@ -601,7 +628,7 @@ class HtmlWebpackPlugin {
    * @param {Compilation} compilation
    * @returns Promise<string>
    */
-  executeTemplate (templateFunction, assetsInformationByGroups, assetTags, compilation) {
+  executeTemplate(templateFunction, assetsInformationByGroups, assetTags, compilation) {
     // Template processing
     const templateParamsPromise = this.getTemplateParameters(compilation, assetsInformationByGroups, assetTags);
 
@@ -627,7 +654,7 @@ class HtmlWebpackPlugin {
    * @param {{headTags: HtmlTagObject[], bodyTags: HtmlTagObject[]}} assetTags The asset tags to inject
    * @returns {Promise<string>}
    */
-  postProcessHtml (compiler, originalHtml, assetsInformationByGroups, assetTags) {
+  postProcessHtml(compiler, originalHtml, assetsInformationByGroups, assetTags) {
     let html = originalHtml;
 
     if (typeof html !== 'string') {
@@ -734,7 +761,7 @@ class HtmlWebpackPlugin {
    * Helper to return a sorted unique array of all asset files out of the asset object
    * @private
    */
-  getAssetFiles (assets) {
+  getAssetFiles(assets) {
     const files = _.uniq(Object.keys(assets).filter(assetType => assetType !== 'chunks' && assets[assetType]).reduce((files, assetType) => files.concat(assets[assetType]), []));
     files.sort();
     return files;
@@ -751,7 +778,7 @@ class HtmlWebpackPlugin {
    * @param {PreviousEmittedAssets} previousEmittedAssets
    * @returns {Promise<string|undefined>}
    */
-  generateFavicon (compiler, favicon, compilation, publicPath, previousEmittedAssets) {
+  generateFavicon(compiler, favicon, compilation, publicPath, previousEmittedAssets) {
     if (!favicon) {
       return Promise.resolve(undefined);
     }
@@ -760,7 +787,7 @@ class HtmlWebpackPlugin {
 
     return promisify(compilation.inputFileSystem.readFile)(filename)
       .then((buf) => {
-        const source = new compiler.webpack.sources.RawSource(/** @type {string | Buffer} */ (buf), false);
+        const source = new compiler.webpack.sources.RawSource(/** @type {string | Buffer} */(buf), false);
         const name = path.basename(filename);
 
         compilation.fileDependencies.add(filename);
@@ -770,7 +797,7 @@ class HtmlWebpackPlugin {
         const faviconPath = publicPath + name;
 
         if (this.options.hash) {
-          return this.appendHash(faviconPath, /** @type {string} */ (compilation.hash));
+          return this.appendHash(faviconPath, /** @type {string} */(compilation.hash));
         }
 
         return faviconPath;
@@ -785,7 +812,7 @@ class HtmlWebpackPlugin {
    * @param {Array<string>} jsAssets
    * @returns {Array<HtmlTagObject>}
    */
-  generatedScriptTags (jsAssets) {
+  generatedScriptTags(jsAssets) {
     // @ts-ignore
     return jsAssets.map(src => {
       const attributes = {};
@@ -814,7 +841,7 @@ class HtmlWebpackPlugin {
    * @param {Array<string>} cssAssets
    * @returns {Array<HtmlTagObject>}
    */
-  generateStyleTags (cssAssets) {
+  generateStyleTags(cssAssets) {
     return cssAssets.map(styleAsset => ({
       tagName: 'link',
       voidTag: true,
@@ -832,7 +859,7 @@ class HtmlWebpackPlugin {
    * @param {string | {[attributeName: string]: string}} base
    * @returns {Array<HtmlTagObject>}
    */
-  generateBaseTag (base) {
+  generateBaseTag(base) {
     return [{
       tagName: 'base',
       voidTag: true,
@@ -851,7 +878,7 @@ class HtmlWebpackPlugin {
    * @param {false | {[name: string]:  false | string | {[attributeName: string]: string|boolean}}} metaOptions
    * @returns {Array<HtmlTagObject>}
    */
-  generatedMetaTags (metaOptions) {
+  generatedMetaTags(metaOptions) {
     if (metaOptions === false) {
       return [];
     }
@@ -891,7 +918,7 @@ class HtmlWebpackPlugin {
    * @param {string} favicon
    * @returns {Array<HtmlTagObject>}
    */
-  generateFaviconTag (favicon) {
+  generateFaviconTag(favicon) {
     return [{
       tagName: 'link',
       voidTag: true,
@@ -917,7 +944,7 @@ class HtmlWebpackPlugin {
       bodyTags: Array<HtmlTagObject>;
     }}
    */
-  groupAssetsByElements (assetTags, scriptTarget) {
+  groupAssetsByElements(assetTags, scriptTarget) {
     /** @type {{ headTags: Array<HtmlTagObject>; bodyTags: Array<HtmlTagObject>; }} */
     const result = {
       headTags: [
@@ -954,7 +981,7 @@ class HtmlWebpackPlugin {
    * @param {Compilation} compilation
    * @returns {{ path: string, info: {} }}
    */
-  replacePlaceholdersInFilename (compiler, filename, fileContent, compilation) {
+  replacePlaceholdersInFilename(compiler, filename, fileContent, compilation) {
     if (/\[\\*([\w:]+)\\*\]/i.test(filename) === false) {
       return { path: filename, info: {} };
     }
@@ -993,7 +1020,7 @@ class HtmlWebpackPlugin {
    * @param {{ value: string | undefined }} assetJson
    * @param {(err?: Error) => void} callback
    */
-  generateHTML (
+  generateHTML(
     compiler,
     compilation,
     outputName,
@@ -1065,7 +1092,7 @@ class HtmlWebpackPlugin {
       .then(({ assetTags }) => {
         // Inject scripts to body unless it set explicitly to head
         const scriptTarget = this.options.inject === 'head' ||
-        (this.options.inject !== 'body' && this.options.scriptLoading !== 'blocking') ? 'head' : 'body';
+          (this.options.inject !== 'body' && this.options.scriptLoading !== 'blocking') ? 'head' : 'body';
         // Group assets to `head` and `body` tag arrays
         const assetGroups = this.groupAssetsByElements(assetTags, scriptTarget);
         // Allow third-party-plugin authors to reorder and change the assetTags once they are grouped
@@ -1179,7 +1206,7 @@ class HtmlWebpackPlugin {
  * @param {ProcessedHtmlWebpackOptions} options
  * @returns {TemplateParameter}
  */
-function templateParametersGenerator (compilation, assets, assetTags, options) {
+function templateParametersGenerator(compilation, assets, assetTags, options) {
   return {
     compilation: compilation,
     webpackConfig: compilation.options,
